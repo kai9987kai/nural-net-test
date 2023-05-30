@@ -1,66 +1,58 @@
-from pyparsing import Word, alphas, nums, oneOf, infixNotation
+from pyparsing import Word, alphas, nums, oneOf, infixNotation, ZeroOrMore
 import torch
 import pysimplegui as sg
 
-# define the tokens for the language
-number = Word(nums).setName("number")
-variable = Word(alphas).setName("variable")
-string = Word(alphanums + " ").setName("string")
-comma = oneOf(",").setName(",")
-colon = oneOf(":").setName(":")
-open_bracket = oneOf("[").setName("[")
-close_bracket = oneOf("]").setName("]")
+def create_nn(layer_defs):
+    layers = []
+    for defn in layer_defs:
+        input_size, output_size = defn
+        layer = torch.nn.Linear(input_size, output_size)
+        layers.append(layer)
+    return torch.nn.Sequential(*layers)
 
-# define the syntax for creating a neural network
-nn_layers = open_bracket + number + comma + number + close_bracket
-nn_definition = "nn" + colon + nn_layers + zeroOrMore(comma + nn_layers)
+def parse_program(program):
+    number = Word(nums).setName("number")
+    variable = Word(alphas).setName("variable")
+    comma = oneOf(",").setName(",")
+    colon = oneOf(":").setName(":")
+    open_bracket = oneOf("[").setName("[")
+    close_bracket = oneOf("]").setName("]")
+    nn_layers = open_bracket + number + comma + number + close_bracket
+    nn_definition = "nn" + colon + nn_layers + ZeroOrMore(comma + nn_layers)
+    result = nn_definition.parseString(program)
+    return result[2:]
 
-# define the syntax for training the neural network
-nn_train = "train" + colon + variable
+def create_gui(nn):
+    layout = [
+        [sg.Text("Enter a number:")],
+        [sg.InputText(key="input")],
+        [sg.Button("Send")],
+        [sg.Text("Output:")],
+        [sg.Output(key="output")],
+    ]
+    window = sg.Window("Neural Network", layout)
+    return window
 
-# parse the input program
-result = nn_definition.parseString("nn: [64, 128], [128, 64], [64, 10]")
+def main_loop(window, nn):
+    while True:
+        event, values = window.read()
+        if event == "Send":
+            try:
+                input_message = float(values["input"])
+                output_message = nn(torch.tensor([input_message]))
+                print(output_message.item(), end="", file=window["output"])
+            except ValueError:
+                print("Invalid input. Please enter a number.", end="", file=window["output"])
+        elif event == sg.WINDOW_CLOSED:
+            break
+    window.close()
 
-# extract the layer definitions from the parse result
-layer_defs = result[2:]
+def main():
+    program = "nn: [64, 128], [128, 64], [64, 10]"
+    layer_defs = parse_program(program)
+    nn = create_nn(layer_defs)
+    window = create_gui(nn)
+    main_loop(window, nn)
 
-# create a list of torch.nn.Linear layers
-layers = []
-for defn in layer_defs:
-    input_size, output_size = defn
-    layer = torch.nn.Linear(input_size, output_size)
-    layers.append(layer)
-
-# create the neural network using the layers
-nn = torch.nn.Sequential(*layers)
-
-# define the GUI layout
-layout = [
-    [sg.Text("Enter a message:")],
-    [sg.InputText(key="input")],
-    [sg.Button("Send")],
-    [sg.Text("Output:")],
-    [sg.Output(key="output")],
-]
-
-# create the GUI window
-window = sg.Window("Chatbot", layout)
-
-# define the main loop
-while True:
-    # get the next event from the GUI
-    event, values = window.read()
-
-    # check if the "Send" button was clicked
-    if event == "Send":
-        # get the input message from the GUI
-        input_message = values["input"]
-
-        # pass the input message through the neural network
-        output_message = nn(torch.tensor(input_message))
-
-        # display the output message in the GUI
-        print(output_message, end="", file=window["output"])
-
-# close the GUI window
-window.close()
+if __name__ == "__main__":
+    main()
